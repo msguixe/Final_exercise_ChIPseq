@@ -22,13 +22,13 @@ knitr::opts_chunk$set(echo = TRUE)
  **2. Complete the Docker exercise 1 (see hands-on). Make a Git repository containing the Dockerfile that you used to build your image and push it to GitHub. Add the URL that points to your image in DockerHub in the ‘description’ of the Dockerfile.**  
  
  Results:  
- http://github.com/msguixe/exercise_docker  
- http://hub.docker.com/msguixe/exercise_docker  
+ http://github.com/msguixe/Docker_exercise  
+ http://hub.docker.com/msguixe/image_venn:final  
  
   **Make another GitHub repository with the answer to the following points:**  
   
   Results:  
-  http://github.com/msguixe/exercise_ChIP  
+  http://github.com/msguixe/Final_exercise_ChIPseq  
   
  **3. Describe the workflow of a ChIP-seq experiment (experimental part)**  
  
