@@ -1,0 +1,107 @@
+##############################################
+#1. Download bigBed peak calling for H3K27ac
+##############################################
+
+grep -F H3K27ac metadata.tsv |\
+awk 'BEGIN{FS=OFS="\t"; print "file_id\ttissue\ttarget" } $2=="bigBed_narrowPeak" && $3=="stable_peaks" && $44!="hg19" {print $1, $7, $19}' > bigBed.H3K27ac.peaks.ids.txt
+
+cut -f1 bigBed.H3K27ac.peaks.ids.txt |\
+tail -n+2 |\
+while read filename; do
+  wget -P bigBed.files "https://www.encodeproject.org/files/$filename/@@download/$filename.bigBed"
+done
+
+###################################################
+#2. Download bigWig fold-change files for H3K27ac
+###################################################
+
+grep -F H3K27ac metadata.tsv |\
+awk 'BEGIN{FS=OFS="\t"; print "file_id\ttissue\ttarget" } $2=="bigWig" && $3=="fold_change_over_control" && $44!="hg19" {print $1, $7, $19}' > bigWig.H3K27ac.FC.ids.txt
+
+cut -f1 bigWig.H3K27ac.FC.ids.txt |\
+tail -n+2 |\
+while read filename; do
+  wget -P bigWig.files "https://www.encodeproject.org/files/$filename/@@download/$filename.bigWig"
+done
+
+################################################
+#3. Check the integrity of the downloaded files
+################################################
+
+for file_type in bigBed bigWig; do
+
+  # retrieve original MD5 hash from the metadata
+  ../bin/selectRows.sh <(cut -f1 "$file_type".*.ids.txt) metadata.tsv | cut -f1,41 > "$file_type".files/md5sum.txt
+
+  # compute MD5 hash on the downloaded files 
+  cat "$file_type".files/md5sum.txt |\
+  while read filename original_md5sum; do 
+    md5sum "$file_type".files/"$filename"."$file_type" |\
+    awk -v filename="$filename" -v original_md5sum="$original_md5sum" 'BEGIN{FS=" "; OFS="\t"}{print filename, original_md5sum, $1}' 
+  done > tmp 
+  mv tmp "$file_type".files/md5sum.txt
+
+  # make sure there are no files for which original and computed MD5 hashes differ
+  awk '$2!=$3' "$file_type".files/md5sum.txt
+
+done
+
+###########################################################
+#4. Convert the bigBed files to H3K27ac peaks to bed files
+###########################################################
+
+tail -n+2 bigBed.H3K27ac.peaks.ids.txt |\
+cut -f1 |\
+while read filename; do
+  bigBedToBed bigBed.files/"$filename".bigBed bed.files/"$filename".bed
+done
+
+#Retrieve genes with peaks for H3K27ac at the promoter region of each tissue:
+
+cut -f-2 bigBed.H3K27ac.peaks.ids.txt |\
+tail -n+2 |\
+while read filename tissue; do 
+  bedtools intersect -a bed.files/gencode.v24.protein.coding.non.redundant.TSS.bed -b bed.files/"$filename".bed -u |\
+  cut -f7 |\
+  sort -u > downstream.analyses/peaks.analysis/genes.with.peaks."$tissue".H3K27ac.txt
+done
+
+#############################################
+#5. Genes marked by H3K27ac in both tissues:
+#############################################
+
+../bin/selectRows.sh downstream.analyses/peaks.analysis/genes.with.peaks.stomach.H3K27ac.txt downstream.analyses/peaks.analysis/genes.with.peaks.sigmoid_colon.H3K27ac.txt |\
+cut -d "." -f1 > downstream.analyses/peaks.analysis/genes.marked.both.tissues.H3K27ac.txt
+
+###########################################################
+#6. Genes with peaks of H3K4me3 and H3K27ac in each tissue
+###########################################################
+
+#H3K3me3 and H3K27ac in sigmoid colon:
+../bin/selectRows.sh downstream.analyses/peaks.analysis/genes.with.peaks.sigmoid_colon.H3K4me3.txt downstream.analyses/peaks.analysis/genes.with.peaks.sigmoid_colon.H3K27ac.txt |\
+cut -d "." -f1 > downstream.analyses/peaks.analysis/genes.marked.sigmoid_colon.bothHM.txt
+
+#H3K3me3 and H3K27ac in stomach:
+../bin/selectRows.sh downstream.analyses/peaks.analysis/genes.with.peaks.stomach.H3K4me3.txt downstream.analyses/peaks.analysis/genes.with.peaks.stomach.H3K27ac.txt |\
+cut -d "." -f1 > downstream.analyses/peaks.analysis/genes.marked.stomach.bothHM.txt
+
+#H3K3me3 and H3K27ac in both tissues:
+../bin/selectRows.sh downstream.analyses/peaks.analysis/genes.marked.sigmoid_colon.bothHM.txt downstream.analyses/peaks.analysis/genes.marked.stomach.bothHM.txt |\
+cut -d "." -f1 > downstream.analyses/peaks.analysis/genes.marked.both.tissues.bothHM.txt
+
+#count genes with peaks 
+wc -l ./downstream.analyses/peaks.analysis/genes.with.peaks.sigmoid_colon.H3K27ac.txt
+wc -l ./downstream.analyses/peaks.analysis/genes.with.peaks.stomach.H3K27ac.txt
+wc -l ./downstream.analyses/peaks.analysis/genes.with.peaks.sigmoid_colon.H3K4me3.txt
+wc -l ./downstream.analyses/peaks.analysis/genes.with.peaks.stomach.H3K4me3.txt
+wc -l ./downstream.analyses/peaks.analysis/genes.marked.sigmoid_colon.bothHM.txt
+wc -l ./downstream.analyses/peaks.analysis/genes.marked.stomach.bothHM.txt
+wc -l ./downstream.analyses/peaks.analysis/genes.marked.both.tissues.bothHM.txt
+
+###################
+#7. Venn diagram
+###################
+
+#VennDiagram.4groups.R code is changed to correctly write H3K27ac tags instead of POLR2A
+
+Rscript ../bin/VennDiagram.4groups.R --setA downstream.analyses/peaks.analysis/genes.with.peaks.stomach.H3K4me3.txt --setB downstream.analyses/peaks.analysis/genes.with.peaks.stomach.H3K27ac.txt --setC downstream.analyses/peaks.analysis/genes.with.peaks.sigmoid_colon.H3K4me3.txt --setD downstream.analyses/peaks.analysis/genes.with.peaks.sigmoid_colon.H3K27ac.txt --output downstream.analyses/peaks.analysis/Venn.Diagram.H3K4me3.H3K27ac.png
